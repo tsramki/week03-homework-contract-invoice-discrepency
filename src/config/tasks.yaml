@@ -1,0 +1,69 @@
+extract_contract_task:
+  description: >
+    Use the read_pdf_text tool to read the contract PDF at path: {contract_path}.
+    Then extract a structured record with: vendor name, the invoice number the
+    contract references (if stated), payment terms (e.g. "Net 14 days"),
+    payment method, and the full list of priced items with their exact name and
+    unit price as written in the document. Do not invent items or prices that
+    are not in the text.
+  expected_output: >
+    A JSON object matching: {{vendor, referenced_invoice_number, payment_terms,
+    payment_method, items: [{{name, unit_price}}]}}
+  agent: contract_extractor
+  output_file: output/contract_data.json
+
+extract_invoice_task:
+  description: >
+    Use the read_pdf_text tool to read the invoice PDF at path: {invoice_path}.
+    Then extract a structured record with: invoice number, invoice date, due
+    date, vendor, bill-to party, payment terms, payment method, every line item
+    (description, quantity, unit price, amount exactly as printed), subtotal,
+    tax, and total due. Do not invent or recompute any values -- capture them
+    exactly as printed.
+  expected_output: >
+    A JSON object matching: {{invoice_number, invoice_date, due_date, vendor,
+    bill_to, payment_terms, payment_method, line_items: [{{description,
+    quantity, unit_price, amount}}], subtotal, tax, total_due}}
+  agent: invoice_extractor
+  output_file: output/invoice_data.json
+
+analyze_discrepancy_task:
+  description: >
+    Take the structured contract data and structured invoice data produced by
+    the previous two tasks. Call the compare_contract_and_invoice tool exactly
+    once, passing the contract JSON and invoice JSON as its two arguments
+    (as compact JSON strings). Then review the tool's output and write a
+    complete list of discrepancies, each with: the item(s) involved, the type
+    of discrepancy, the contract value, the invoice value, and the dollar
+    impact where applicable. Do not compute any of your own math -- only report
+    what the tool returned, in plain business language.
+  expected_output: >
+    A structured list of discrepancy findings (pricing mismatches, quantity or
+    line-math errors, items billed but not contracted, items contracted but
+    not billed, and any payment terms/method/reference mismatches), each with
+    a clear plain-language explanation and dollar impact.
+  agent: discrepancy_analyst
+  context:
+    - extract_contract_task
+    - extract_invoice_task
+
+write_report_task:
+  description: >
+    Using the discrepancy analyst's findings, write a final Markdown
+    discrepancy report for invoice {invoice_path} against its governing
+    contract. Structure it with:
+    1. A one-paragraph executive summary (how many discrepancies, total dollar
+       impact, overall risk level).
+    2. A table of per-item discrepancies (item, issue type, contract value,
+       invoice value, dollar impact).
+    3. Any invoice-level issues (arithmetic errors, payment terms/method
+       mismatches, missing/extra items).
+    4. A clear recommendation (e.g. approve, approve with adjustment, reject
+       and request corrected invoice).
+  expected_output: >
+    A complete Markdown report saved to output/discrepancy_report.md, ready to
+    share with a procurement manager.
+  agent: report_writer
+  context:
+    - analyze_discrepancy_task
+  output_file: output/discrepancy_report.md
